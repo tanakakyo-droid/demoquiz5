@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Fill-in-the-Blank Quiz</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      text-align: center; 
+      margin: 0; 
+      padding: 0; 
+      background: linear-gradient(to bottom, #ffffff 80%, #ccffcc 100%);
+    }
+    header {
+      background: yellowgreen;
+      padding: 10px;
+      color: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .quiz-container { 
+      max-width: 800px; 
+      margin: 20px auto; 
+      padding: 20px; 
+      background: white; 
+      border-radius: 10px; 
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    }
+    .input-field { margin: 10px; padding: 12px; font-size: 22px; width: 60%; }
+    .button { margin: 10px; padding: 10px 20px; font-size: 18px; cursor: pointer; }
+    .circle-button { 
+      width: 35px; height: 35px; border-radius: 50%; 
+      border: none; margin-left: 10px; cursor: pointer;
+      background-color: #007BFF; color: white; font-size: 16px;
+    }
+    .progress-bar { width: 100%; background: #ddd; border-radius: 10px; margin-top: 20px; }
+    .progress { height: 20px; background: #4CAF50; border-radius: 10px; width: 0%; }
+    .hidden { display: none; }
+    .red { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <header>
+    <label id="nameField">名前: <input type="text" id="username" placeholder="Your name"></label>
+    <div>
+      <button class="button hidden" id="retryBtn">Retry Incorrect Questions</button>
+      <button class="button hidden" id="pdfBtn">Download PDF</button>
+    </div>
+  </header>
+
+  <div class="quiz-container">
+    <div id="question"></div>
+    <div id="inputs"></div>
+    <button class="button" id="submitBtn">Submit</button>
+    <button class="button hidden" id="nextBtn">Next</button>
+    <button class="button hidden" id="showAllBtn">Show All Results</button>
+    <div id="feedback"></div>
+    <div id="translation"></div>
+    <div class="progress-bar" id="progressBar"><div class="progress" id="progress"></div></div>
+    <div id="scoreBoard"></div>
+  </div>
+
+  <script>
+    const questions = [
+      { sentence: "The capital of France is ___ and it is famous for the Eiffel Tower.", answers: ["Paris"], translation: "The capital of France is Paris, and it is famous for the Eiffel Tower.", jpTranslation: "フランスの首都はパリで、エッフェル塔で有名です。" },
+      { sentence: "Water boils at ___ degrees Celsius and freezes at ___ degrees.", answers: ["100","0"], translation: "Water boils at 100 degrees Celsius and freezes at 0 degrees.", jpTranslation: "水は100度で沸騰し、0度で凍ります。" },
+      { sentence: "She usually goes to ___ by bus.", answers: ["school"], translation: "She usually goes to school by bus.", jpTranslation: "彼女は普段バスで学校へ行きます。" },
+      { sentence: "I have a pet ___ that loves to chase balls.", answers: ["dog"], translation: "I have a pet dog that loves to chase balls.", jpTranslation: "私はボールを追いかけるのが大好きな犬を飼っています。" },
+      { sentence: "He is reading a ___ about history.", answers: ["book"], translation: "He is reading a book about history.", jpTranslation: "彼は歴史に関する本を読んでいます。" },
+      { sentence: "They are playing ___ in the park.", answers: ["soccer"], translation: "They are playing soccer in the park.", jpTranslation: "彼らは公園でサッカーをしています。" },
+      { sentence: "The sun rises in the ___ and sets in the west.", answers: ["east"], translation: "The sun rises in the east and sets in the west.", jpTranslation: "太陽は東から昇り、西に沈みます。" },
+      { sentence: "My favorite color is ___ because it is bright.", answers: ["yellow"], translation: "My favorite color is yellow because it is bright.", jpTranslation: "私の好きな色は黄色です。明るいからです。" },
+      { sentence: "We saw many ___ at the zoo.", answers: ["animals"], translation: "We saw many animals at the zoo.", jpTranslation: "私たちは動物園でたくさんの動物を見ました。" },
+      { sentence: "He bought some ___ to make a cake.", answers: ["eggs"], translation: "He bought some eggs to make a cake.", jpTranslation: "彼はケーキを作るために卵を買いました。" }
+    ];
+
+    let current = 0, score = 0;
+    let userAnswers = [];
+    let incorrectQuestions = [];
+    let retryMode = false;
+    let enterUsed = false;
+
+    const qEl = document.getElementById("question");
+    const inputEl = document.getElementById("inputs");
+    const feedbackEl = document.getElementById("feedback");
+    const translationEl = document.getElementById("translation");
+    const progressEl = document.getElementById("progress");
+    const progressBar = document.getElementById("progressBar");
+    const scoreBoard = document.getElementById("scoreBoard");
+    const pdfBtn = document.getElementById("pdfBtn");
+    const retryBtn = document.getElementById("retryBtn");
+    const showAllBtn = document.getElementById("showAllBtn");
+    const nameField = document.getElementById("nameField");
+
+    function loadQuestion() {
+      const q = questions[current];
+      qEl.textContent = q.sentence;
+      inputEl.innerHTML = "";
+      feedbackEl.textContent = "";
+      translationEl.textContent = "";
+      enterUsed = false;
+
+      q.answers.forEach((_, i) => {
+        const div = document.createElement("div");
+        const inp = document.createElement("input");
+        inp.type = "text";
+        inp.className = "input-field";
+        inp.id = "ans" + i;
+        div.appendChild(inp);
+        inputEl.appendChild(div);
+      });
+
+      document.getElementById("submitBtn").classList.remove("hidden");
+      document.getElementById("nextBtn").classList.add("hidden");
+
+      document.querySelectorAll(".input-field").forEach(inp => {
+        inp.addEventListener("keypress", e => {
+          if (e.key === "Enter" && !enterUsed) {
+            checkAnswer();
+            enterUsed = true;
+          }
+        });
+      });
+
+      progressEl.style.width = `${(current / questions.length) * 100}%`;
+    }
+
+    function checkAnswer() {
+      const q = questions[current];
+      let correct = true;
+      let answersGiven = [];
+
+      q.answers.forEach((ans, i) => {
+        const userAns = document.getElementById("ans" + i).value.trim();
+        answersGiven.push(userAns);
+        if (userAns.toLowerCase() !== ans.toLowerCase()) correct = false;
+      });
+
+      userAnswers.push({ question: q.sentence, user: answersGiven, correct: q.answers });
+
+      feedbackEl.textContent = correct ? "✅ Correct!" : "❌ Incorrect!";
+      if (correct) score++; else incorrectQuestions.push(q);
+
+      let highlighted = q.translation;
+      q.answers.forEach(ans => {
+        highlighted = highlighted.replace(ans, `<span class="red">${ans}</span>`);
+      });
+
+      translationEl.innerHTML = `
+        <p><b>英文:</b> ${highlighted}</p>
+        <p><b>答え:</b> ${q.answers.join(", ")}</p>
+        <p><b>和訳:</b> ${q.jpTranslation}</p>
+      `;
+
+      q.answers.forEach(ans => {
+        const btnWord = document.createElement("button");
+        btnWord.textContent = "🔊";
+        btnWord.className = "circle-button";
+        btnWord.onclick = () => speak(ans);
+        translationEl.appendChild(btnWord);
+      });
+
+      const btnSentence = document.createElement("button");
+      btnSentence.textContent = "🔊";
+      btnSentence.className = "circle-button";
+      btnSentence.onclick = () => speak(q.translation);
+      translationEl.appendChild(btnSentence);
+
+      document.getElementById("submitBtn").classList.add("hidden");
+      document.getElementById("nextBtn").classList.remove("hidden");
+    }
+
+    function nextQuestion() {
+      current++;
+      if (current < questions.length) {
+        loadQuestion();
+      } else {
+        progressEl.style.width = "100%";
+        progressBar.classList.add("hidden");
+        document.getElementById("showAllBtn").classList.remove("hidden");
+      }
+    }
+
+    function showAllResults() {
+      qEl.textContent = "All Results";
+      inputEl.innerHTML = "";
+      feedbackEl.textContent = "";
+      translationEl.innerHTML = "";
+      scoreBoard.textContent = `Your score: ${score} / ${questions.length}`;
+      document.getElementById("nextBtn").classList.add("hidden");
+      document.getElementById("submitBtn").classList.add("hidden");
+      document.getElementById("showAllBtn").classList.add("hidden");
+      pdfBtn.classList.remove("hidden");
+      retryBtn.classList.remove("hidden");
+      nameField.classList.add("hidden");
+    }
+
+    function retryIncorrect() {
+      questions.length = 0;
+      incorrectQuestions.forEach(q => questions.push(q));
+      incorrectQuestions = [];
+      userAnswers = [];
+      score = 0;
+      current = 0;
+      retryMode = true;
+      retryBtn.classList.add("hidden");
+      pdfBtn.classList.add("hidden");
+      scoreBoard.textContent = "";
+      nameField.classList.remove("hidden");
+      progressBar.classList.remove("hidden");
+      loadQuestion();
+    }
+
+    function speak(text) {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "en-US";
+      u.voice = speechSynthesis.getVoices().find(v => v.lang === "en-US" && v.name.toLowerCase().includes("female")) || null;
+      speechSynthesis.speak(u);
+    }
+
+    function downloadPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const username = document.getElementById("username").value.trim();
+
+      doc.setFontSize(14);
+      doc.text("Quiz Results", 10, 10);
+      if (username) doc.text(`Name: ${username}`, 150, 10);
+      doc.text(`Score: ${score} / ${questions.length}`, 10, 20);
+
+      let y = 30;
+      doc.text("Correct Answers:", 10, y); y += 10;
+
+      userAnswers.forEach((entry, idx) => {
+        const correct = entry.user.join(", ").toLowerCase() === entry.correct.join(", ").toLowerCase();
+        if (correct) {
+          let lines = doc.splitTextToSize(`${idx + 1}. ${entry.question}`, 180);
+          doc.text(lines, 10, y); y += lines.length * 7;
+          lines = doc.splitTextToSize(`Your Answer: ${entry.user.join(", ")}`, 180);
+          doc.text(lines, 10, y); y += lines.length * 7 + 5;
+          if (y > 270) { doc.addPage(); y = 20; }
+        }
+      });
+
+      y += 10;
+      doc.text("Incorrect Answers:", 10, y); y += 10;
+
+      userAnswers.forEach((entry, idx) => {
+        const correct = entry.user.join(", ").toLowerCase() === entry.correct.join(", ").toLowerCase();
+        if (!correct) {
+          let lines = doc.splitTextToSize(`${idx + 1}. ${entry.question}`, 180);
+          doc.text(lines, 10, y); y += lines.length * 7;
+          lines = doc.splitTextToSize(`Your Answer: ${entry.user.join(", ")}`, 180);
+          doc.text(lines, 10, y); y += lines.length * 7;
+          lines = doc.splitTextToSize(`Correct Answer: ${entry.correct.join(", ")}`, 180);
+          doc.text(lines, 10, y); y += lines.length * 7 + 5;
+          if (y > 270) { doc.addPage(); y = 20; }
+        }
+      });
+
+      doc.save("quiz_results.pdf");
+    }
+
+    document.getElementById("submitBtn").onclick = checkAnswer;
+    document.getElementById("nextBtn").onclick = nextQuestion;
+    document.getElementById("showAllBtn").onclick = showAllResults;
+    pdfBtn.onclick = downloadPDF;
+    retryBtn.onclick = retryIncorrect;
+
+    loadQuestion();
+  </script>
+</body>
+</html>
